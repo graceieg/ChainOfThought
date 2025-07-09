@@ -22,83 +22,105 @@ from reasoner.models import ReasoningChain, ReasoningStep, Relationship, Relatio
 import textwrap
 
 def display_analysis(chain: ReasoningChain, issues: List[Dict[str, Any]], suggestions: List[Dict[str, Any]]):
-    """Display the analysis results in a user-friendly format."""
-    console = Console(width=100)  # Consistent width with main console
+    """Display the analysis results in a concise, non-repetitive format."""
+    console = Console(width=100)
     
     # Display the reasoning chain with proper wrapping
     console.print("\n[bold cyan]Your Reasoning Chain:[/bold cyan]")
     for i, step in enumerate(chain.steps, 1):
-        # Split long lines into multiple lines if needed
         text = f"{i}. {step.text}"
         for line in text.split('\n'):
-            # Use textwrap for consistent wrapping
             for wrapped_line in textwrap.wrap(line, width=90):
                 console.print(f"  {wrapped_line}")
     
-    # Group issues by severity
-    issues_by_severity = {
-        'info': [],
-        'low': [],
-        'medium': [],
-        'high': []
+    # Track displayed suggestions to avoid repetition
+    displayed_suggestions = set()
+    
+    # Process and display issues by severity
+    severity_titles = {
+        'info': "[bold blue]Key Insights:[/bold blue]",
+        'low': "[bold yellow]Considerations:[/bold yellow]",
+        'medium': "[bold orange]Areas for Improvement:[/bold orange]",
+        'high': "[bold red]Critical Issues:[/bold red]"
     }
     
+    # Group and process issues by step
+    step_issues = {}
     for issue in issues:
-        severity = issue.get('severity', 'info')
-        issues_by_severity[severity].append(issue)
+        step_num = issue.get('step', 0)
+        if step_num not in step_issues:
+            step_issues[step_num] = []
+        step_issues[step_num].append(issue)
     
-    # Track if we have any issues to show
-    has_issues = any(issues_by_severity.values())
-    
-    # Display issues by severity
-    for severity, issues_list in issues_by_severity.items():
-        if not issues_list:
+    # Display issues by step for better context
+    for step_num, step_issues_list in step_issues.items():
+        if not step_issues_list:
             continue
             
-        if severity == 'info':
-            console.print("\n[bold blue]Insights:[/bold blue]")
-        elif severity == 'low':
-            console.print("\n[bold yellow]Considerations:[/bold yellow]")
-        else:
-            console.print(f"\n[bold red]Areas Needing Attention ({severity} severity):[/bold red]")
+        # Group issues by severity within each step
+        severity_groups = {}
+        for issue in step_issues_list:
+            severity = issue.get('severity', 'info')
+            if severity not in severity_groups:
+                severity_groups[severity] = []
+            severity_groups[severity].append(issue)
         
-        for item in issues_list:
-            # Format description with proper wrapping
-            description = item['description'].strip()
-            if not description.endswith(('!', '.', '?')):
-                description += '.'
+        # Display the step header if there are multiple steps
+        if len(step_issues) > 1:
+            console.print(f"\n[bold]Step {step_num}:[/bold]")
+        
+        # Display issues by severity
+        for severity, issues_list in severity_groups.items():
+            console.print(severity_titles.get(severity, "[bold]Findings:[/bold]"))
             
-            # Print bullet point with wrapped description
-            wrapped_desc = textwrap.wrap(description, width=85)  # 85 to account for bullet point
-            for i, line in enumerate(wrapped_desc):
-                prefix = "  • " if i == 0 else "    "
-                console.print(prefix + line)
-            
-            # Print suggestions with proper wrapping
-            if 'suggestions' in item and item['suggestions']:
-                console.print("\n    [dim]Suggestions:[/dim]")
-                for suggestion in item['suggestions']:
-                    suggestion = suggestion.strip()
-                    if not suggestion.endswith(('.', '!', '?')):
-                        suggestion += '.'
+            for issue in issues_list:
+                # Format description
+                description = issue['description'].strip()
+                if not description.endswith(('.', '!', '?')):
+                    description += '.'
+                console.print(f"  • {description}")
+                
+                # Process suggestions
+                if 'suggestions' in issue and issue['suggestions']:
+                    # Only show unique suggestions
+                    unique_suggestions = []
+                    for suggestion in issue['suggestions']:
+                        suggestion = suggestion.strip()
+                        if suggestion and suggestion not in displayed_suggestions:
+                            unique_suggestions.append(suggestion)
+                            displayed_suggestions.add(suggestion)
                     
-                    # Wrap long suggestion lines
-                    wrapped_suggestion = textwrap.wrap(suggestion, width=80)  # 80 to account for bullet point and indentation
-                    for i, line in enumerate(wrapped_suggestion):
-                        prefix = "      ◦ " if i == 0 else "        "
-                        console.print(prefix + line)
+                    if unique_suggestions:
+                        console.print("    [dim]Suggestions:[/dim]")
+                        for suggestion in unique_suggestions[:3]:  # Limit to top 3 suggestions
+                            if not suggestion.endswith(('.', '!', '?')):
+                                suggestion += '.'
+                            console.print(f"      ◦ {suggestion}")
     
-    if not has_issues:
+    if not any(step_issues.values()):
         console.print("\n[green]✓ Your reasoning looks solid! No major issues found.[/green]")
-
-    # Generate and display ML-based suggestions
-    console.print("\n[bold]Analysis:[/bold]")
+    
+    # Generate and display ML-based suggestions if not already covered
     try:
         ml_engine = LocalMLSuggestionEngine()
-        suggestions = ml_engine.get_suggestions(chain)
-        ml_engine.display_suggestions(suggestions)
+        ml_suggestions = ml_engine.get_suggestions(chain)
+        
+        # Filter out suggestions already shown
+        new_suggestions = []
+        for suggestion in ml_suggestions:
+            if 'suggestions' in suggestion:
+                new_suggestions.extend([s for s in suggestion['suggestions'] 
+                                     if s.strip() not in displayed_suggestions])
+        
+        if new_suggestions:
+            console.print("\n[bold]Additional Suggestions:[/bold]")
+            for suggestion in new_suggestions[:3]:  # Limit to top 3 additional suggestions
+                if not suggestion.endswith(('.', '!', '?')):
+                    suggestion += '.'
+                console.print(f"  • {suggestion}")
+                
     except Exception as e:
-        console.print(f"An error occurred during analysis: {str(e)}", style="red")
+        console.print(f"\n[red]Note: Some suggestions could not be generated: {str(e)}[/red]")
 
 def main():
     """Main entry point for the Chain of Thought debugger."""

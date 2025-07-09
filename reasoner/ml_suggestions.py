@@ -25,7 +25,7 @@ class LocalMLSuggestionEngine:
         ]
     
     def get_suggestions(self, chain: ReasoningChain) -> List[Dict[str, Any]]:
-        """Generate suggestions for improving the reasoning chain using local ML.
+        """Generate focused suggestions for improving the reasoning chain.
         
         Args:
             chain: The reasoning chain to analyze
@@ -37,124 +37,83 @@ class LocalMLSuggestionEngine:
         
         # Check for very short steps
         for i, step in enumerate(chain.steps):
-            if len(step.text.split()) < 3:  # Very short step
+            text = step.text.strip()
+            words = text.split()
+            
+            # Skip empty steps
+            if not words:
+                continue
+                
+            # Check for very short steps
+            if len(words) < 3:
                 suggestions.append({
                     "type": "step_too_short",
-                    "description": f"Step {i+1} is quite brief and could benefit from more detail",
+                    "description": f"Step {i+1} is quite brief",
                     "confidence": 0.9,
                     "severity": "low",
                     "suggestions": [
-                        "Elaborate on this point with more specific details",
-                        "Provide a concrete example to illustrate your point",
-                        "Explain how this connects to your overall reasoning"
+                        "Add more details or examples",
+                        "Explain the connection to your main point"
                     ]
                 })
-        
-        # Analyze sentiment and subjectivity
-        for i, step in enumerate(chain.steps):
-            text = step.text.lower()
-            blob = TextBlob(step.text)
+                continue
+                
+            # Analyze sentiment and subjectivity
+            blob = TextBlob(text.lower())
             
-            # Check for highly subjective statements
-            subjectivity = blob.sentiment.subjectivity
+            # Check for emotional language
+            emotional_indicators = {
+                'positive': ['excellent', 'great', 'amazing', 'love', 'perfect', 'best'],
+                'negative': ['terrible', 'awful', 'worst', 'hate', 'never', 'always']
+            }
             
-            # Indicators of subjectivity
-            subjective_indicators = [
-                # First person statements
+            # Check for emotional language
+            for sentiment_type, indicators in emotional_indicators.items():
+                if any(indicator in text.lower() for indicator in indicators):
+                    suggestions.append({
+                        "type": f"emotional_language_{sentiment_type}",
+                        "description": f"Step {i+1} includes {sentiment_type} language",
+                        "confidence": 0.8,
+                        "severity": "low",
+                        "suggestions": [
+                            "Consider if this strong language is necessary",
+                            "Balance emotional statements with evidence"
+                        ]
+                    })
+                    break
+                    
+            # Check for subjective language
+            subjective_phrases = [
                 'i think', 'i believe', 'in my opinion', 'from my perspective',
-                'it seems to me', 'i would argue', 'i would suggest',
-                
-                # Modal verbs indicating uncertainty or opinion
-                'might be', 'could be', 'may be', 'seems', 'appears',
-                'suggests', 'indicates', 'implies',
-                
-                # Value judgments
-                'good', 'bad', 'better', 'worse', 'best', 'worst',
-                'should', 'ought to', 'must', 'have to', 'need to'
+                'it seems', 'appears', 'suggests', 'indicates'
             ]
             
-            # Check for absolute statements that might indicate strong opinions
-            absolute_indicators = [
-                'always', 'never', 'every', 'all', 'none', 'no one',
-                'everyone', 'nobody', 'everybody', 'everything', 'nothing'
-            ]
-            
-            has_subjective = any(indicator in text for indicator in subjective_indicators)
-            has_absolute = any(indicator in text for indicator in absolute_indicators)
-            
-            # Calculate confidence based on multiple factors
-            confidence = subjectivity
-            if has_subjective:
-                confidence = min(1.0, confidence + 0.2)
-            if has_absolute:
-                confidence = min(1.0, confidence + 0.1)
-                
-            # Check if this is a conclusion or claim
-            is_conclusion = any(word in text for word in ['therefore', 'thus', 'hence', 'so', 'conclusion'])
-            if is_conclusion:
-                confidence = min(1.0, confidence + 0.1)
-            
-            # If confidence is high enough, add a suggestion
-            if confidence > 0.7:  # Slightly lowered threshold
+            if any(phrase in text.lower() for phrase in subjective_phrases):
                 suggestions.append({
-                    "type": "high_subjectivity",
-                    "description": f"Step {i+1} appears to be opinion-based or subjective",
-                    "confidence": min(0.95, confidence),  # Cap confidence
+                    "type": "subjective_language",
+                    "description": f"Step {i+1} includes subjective language",
+                    "confidence": 0.7,
                     "severity": "info",
                     "suggestions": [
-                        "Support this with objective evidence or data",
-                        "Clarify that this reflects your personal perspective",
-                        "Explain the reasoning behind this viewpoint"
+                        "Consider if this could be stated more objectively",
+                        "Support with evidence or data if possible"
                     ]
                 })
             
             # Check for strong sentiment (positive or negative)
             polarity = blob.sentiment.polarity
             
-            # Check for negative sentiment with different thresholds
-            if polarity < -0.3:  # Negative sentiment
-                # Check for words that indicate strong negative sentiment
-                strong_negative_words = ['fail', 'terrible', 'awful', 'horrible', 'never', 'worst']
-                has_strong_negative = any(word in text for word in strong_negative_words)
-                
-                if has_strong_negative or polarity < -0.5:
-                    # Strong negative sentiment
-                    suggestions.append({
-                        "type": "strong_negative_sentiment",
-                        "description": f"Step {i+1} includes strong negative language",
-                        "confidence": min(0.95, abs(polarity) + 0.2),
-                        "severity": "medium",
-                        "suggestions": [
-                            "Consider rephrasing to be more neutral or constructive",
-                            "Provide evidence or reasoning to support this strong claim"
-                        ]
-                    })
-                else:
-                    # Regular negative sentiment
-                    suggestions.append({
-                        "type": "negative_sentiment",
-                        "description": f"Step {i+1} includes negative language",
-                        "confidence": min(0.9, abs(polarity)),
-                        "severity": "low",
-                        "suggestions": [
-                            "Consider whether this negative framing is necessary",
-                            "Try to maintain a balanced perspective"
-                        ]
-                    })
-            # Check for positive sentiment
-            elif polarity > 0.4:  # Positive sentiment
-                # Check for intensifiers that might indicate stronger sentiment
-                intensifiers = ['very', 'really', 'extremely', 'incredibly', 'absolutely']
-                has_intensifier = any(word in text for word in intensifiers)
-                
+            # Only flag strong sentiment that might bias the reasoning
+            if abs(polarity) > 0.5:  # Strong sentiment (positive or negative)
+                sentiment_type = "positive" if polarity > 0 else "negative"
                 suggestions.append({
-                    "type": "strong_positive_sentiment",
-                    "description": f"Step {i+1} includes strong positive language",
-                    "confidence": min(0.9, abs(polarity) + (0.15 if has_intensifier else 0)),
+                    "type": f"strong_{sentiment_type}_sentiment",
+                    "description": f"Step {i+1} includes strong {sentiment_type} language",
+                    "confidence": min(0.9, abs(polarity) * 1.5),
                     "severity": "low",
                     "suggestions": [
-                        "Consider if the positive language is supported by evidence",
-                        "Balance emotional language with factual statements"
+                        "Consider if this strong language is necessary",
+                        "Balance with factual statements"
                     ]
                 })
         
@@ -166,69 +125,89 @@ class LocalMLSuggestionEngine:
     
     def _analyze_flow(self, chain: ReasoningChain) -> List[Dict[str, Any]]:
         """Analyze the flow between reasoning steps."""
-        suggestions = []
+        if len(chain.steps) < 2:
+            return []
+            
+        flow_suggestions = []
         
-        # Check for logical connectors between steps
-        connectors = ["because", "therefore", "thus", "however", "but", "so", "and", "or"]
-        
+        # Check for abrupt transitions between steps
         for i in range(len(chain.steps) - 1):
-            current = chain.steps[i].text.lower()
-            next_step = chain.steps[i+1].text.lower()
+            current_text = chain.steps[i].text.lower()
+            next_text = chain.steps[i + 1].text.lower()
             
-            # Check for abrupt topic changes
-            current_topics = set(word for word in current.split() if len(word) > 4)
-            next_topics = set(word for word in next_step.split() if len(word) > 4)
+            # Simple transition words/phrases to look for
+            transition_indicators = [
+                'therefore', 'thus', 'hence', 'consequently',
+                'additionally', 'furthermore', 'moreover',
+                'however', 'on the other hand', 'conversely',
+                'for example', 'for instance', 'specifically'
+            ]
             
-            if not current_topics.intersection(next_topics) and \
-               not any(connector in next_step for connector in connectors):
-                suggestions.append({
-                    "type": "abrupt_transition",
-                    "description": f"The transition between steps {i+1} and {i+2} might need a smoother connection",
-                    "confidence": 0.7,
+            # Check if transition is needed
+            needs_transition = not any(indicator in next_text for indicator in transition_indicators)
+            
+            # Check for topic continuity
+            current_words = set(word for word in current_text.split() if len(word) > 3)
+            next_words = set(word for word in next_text.split() if len(word) > 3)
+            topic_overlap = len(current_words & next_words) / max(1, min(len(current_words), len(next_words)))
+            
+            if needs_transition and topic_overlap < 0.4:
+                flow_suggestions.append({
+                    "type": "smooth_transition_needed",
+                    "description": f"The transition to step {i+2} could be smoother",
+                    "confidence": 0.8 - (topic_overlap * 1.5),
                     "severity": "low",
                     "suggestions": [
-                        "Add a transition that connects these ideas",
-                        "Explain how these steps relate to each other",
-                        "Consider reordering steps for better flow"
+                        "Add a transition to connect these ideas",
+                        "Explain how these points relate to each other"
                     ]
                 })
-        
-        return suggestions
+                
+        return flow_suggestions
     
     def display_suggestions(self, suggestions: List[Dict[str, Any]]):
-        """Display the suggestions in a user-friendly format."""
-        console = Console(width=100)
-        
+        """Display the suggestions in a concise, non-repetitive format."""
         if not suggestions:
-            console.print("\n[green]✓ No specific suggestions. Your reasoning looks solid![/green]")
             return
-        
-        # Group by severity
-        by_severity = {"info": [], "low": [], "medium": [], "high": []}
-        for s in suggestions:
-            by_severity[s.get("severity", "info")].append(s)
-        
-        # Display by severity
-        for severity, items in by_severity.items():
-            if not items:
-                continue
-                
-            if severity == "info":
-                console.print("\n[blue]Insights:[/blue]")
-            elif severity == "low":
-                console.print("\n[yellow]Considerations:[/yellow]")
-            else:
-                console.print(f"\n[red]Areas for Improvement ({severity}):[/red]")
             
-            for item in items:
-                # Print description with proper wrapping
-                console.print(f"\n  • {item['description']}")
+        console = Console()
+        
+        # Group suggestions by type and step
+        suggestions_by_step = {}
+        for suggestion in suggestions:
+            step = suggestion.get('step', 0)
+            if step not in suggestions_by_step:
+                suggestions_by_step[step] = []
+            suggestions_by_step[step].append(suggestion)
+        
+        # Display suggestions by step
+        for step, step_suggestions in suggestions_by_step.items():
+            if step > 0:
+                console.print(f"\n[bold]Step {step}:[/bold]")
+            
+            # Group by issue type
+            issues = {}
+            for suggestion in step_suggestions:
+                issue_type = suggestion['type']
+                if issue_type not in issues:
+                    issues[issue_type] = []
+                issues[issue_type].append(suggestion)
+            
+            # Display each unique issue type
+            for issue_type, items in issues.items():
+                # Use the first item's description as representative
+                console.print(f"  • {items[0]['description']}")
                 
-                # Print suggestions if they exist
-                if "suggestions" in item and item["suggestions"]:
+                # Collect all unique suggestions
+                all_suggestions = set()
+                for item in items:
+                    if 'suggestions' in item:
+                        all_suggestions.update(item['suggestions'])
+                
+                # Display up to 2 most relevant suggestions
+                if all_suggestions:
                     console.print("    [dim]Suggestions:[/dim]")
-                    for suggestion in item["suggestions"]:
-                        # Wrap long suggestions
-                        for line in textwrap.wrap(suggestion, width=80):
-                            prefix = "      ◦ " if line == suggestion.split('\n')[0] else "        "
-                            console.print(f"{prefix}{line}")
+                    for i, suggestion in enumerate(list(all_suggestions)[:2]):
+                        console.print(f"      ◦ {suggestion}")
+                    if len(all_suggestions) > 2:
+                        console.print(f"      ◦ ...and {len(all_suggestions) - 2} more")
