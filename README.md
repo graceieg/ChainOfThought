@@ -209,13 +209,6 @@ Please ensure your code follows the project's style guidelines and includes appr
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
-## Contact
-
-For questions or feedback, please contact [Your Name] at [your.email@example.com](mailto:your.email@example.com).
-
-- GitHub: [@yourusername](https://github.com/yourusername)
-- Twitter: [@yourhandle](https://twitter.com/yourhandle)
-- Website: [yourwebsite.com](https://yourwebsite.com)
 
 ## Acknowledgements
 
