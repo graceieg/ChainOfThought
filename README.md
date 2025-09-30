@@ -2,16 +2,6 @@
 
 An AI-powered tool that helps you analyze and improve your reasoning processes using machine learning to provide intelligent, context-aware feedback on your thought processes.
 
-## Table of Contents
-- [About](#about)
-- [Features](#features)
-- [Installation](#installation)
-- [Usage](#usage)
-- [Development](#development)
-- [Contributing](#contributing)
-- [License](#license)
-- [Contact](#contact)
-
 ## About
 
 Chain of Thought is designed to help individuals and teams improve their reasoning and decision-making processes. This project was created to address the common challenges people face when trying to structure their thoughts and arguments effectively. By providing real-time, intelligent feedback on reasoning patterns, it helps users identify logical fallacies, emotional biases, and areas where their arguments could be strengthened.
